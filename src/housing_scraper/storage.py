@@ -574,3 +574,127 @@ class StorageManager:
                 "UPDATE auth_refresh_tokens SET revoked = 1 WHERE user_id = %s",
                 (user_id,),
             )
+
+    def log_audit_event(
+        self,
+        user_id: Optional[int],
+        action: str,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[int] = None,
+        details: Optional[dict] = None,
+        ip_address: Optional[str] = None,
+    ) -> None:
+        if self.connection is None:
+            self.connect()
+        import json
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, action, resource_type, resource_id, json.dumps(details) if details else None, ip_address),
+            )
+
+    def get_audit_logs(self, limit: int = 100, offset: int = 0) -> List[dict]:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM audit_logs
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
+            )
+            return cursor.fetchall()
+
+    def record_provider_attempt(self, provider: str, success: bool, latency_ms: int = 0) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            if success:
+                cursor.execute(
+                    """
+                    INSERT INTO provider_stats (provider_name, total_attempts, successful_attempts, last_success_at)
+                    VALUES (%s, 1, 1, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE
+                        total_attempts = total_attempts + 1,
+                        successful_attempts = successful_attempts + 1,
+                        last_success_at = CURRENT_TIMESTAMP
+                    """,
+                    (provider,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO provider_stats (provider_name, total_attempts, failed_attempts, last_failure_at)
+                    VALUES (%s, 1, 1, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE
+                        total_attempts = total_attempts + 1,
+                        failed_attempts = failed_attempts + 1,
+                        last_failure_at = CURRENT_TIMESTAMP
+                    """,
+                    (provider,),
+                )
+
+    def get_provider_stats(self) -> List[dict]:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM provider_stats
+                ORDER BY reliability_score DESC
+                """
+            )
+            return cursor.fetchall()
+
+    def set_user_admin(self, user_id: int, is_admin: bool) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO user_admin_flags (user_id, is_admin)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE is_admin = VALUES(is_admin)
+                """,
+                (user_id, int(is_admin)),
+            )
+
+    def is_user_admin(self, user_id: int) -> bool:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT is_admin FROM user_admin_flags WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        return row["is_admin"] == 1 if row else False
+
+    def ban_user(self, user_id: int, reason: Optional[str] = None) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO user_admin_flags (user_id, is_banned, ban_reason)
+                VALUES (%s, 1, %s)
+                ON DUPLICATE KEY UPDATE is_banned = 1, ban_reason = VALUES(ban_reason)
+                """,
+                (user_id, reason),
+            )
+
+    def is_user_banned(self, user_id: int) -> bool:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT is_banned FROM user_admin_flags WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        return row["is_banned"] == 1 if row else False

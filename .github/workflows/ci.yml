@@ -5,9 +5,36 @@ on:
     branches: ["master", "main"]
   pull_request:
 
+services:
+  mysql:
+    image: mysql:8.0
+    env:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: housing_app
+    options: >-
+      --health-cmd="mysqladmin ping"
+      --health-interval=10s
+      --health-timeout=5s
+      --health-retries=3
+    ports:
+      - 3306:3306
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: housing_app
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+        ports:
+          - 3306:3306
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +57,18 @@ jobs:
           python -m py_compile src/housing_scraper/migrations.py
           python -m py_compile src/housing_scraper/jwt_auth.py
           python -m py_compile src/worker/main.py
+          python -m py_compile src/housing_scraper/observability.py
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           pytest -q tests/test_jwt_auth.py tests/test_migrations_manager.py tests/test_api_auth_flow.py
+
+      - name: Run integration tests
+        env:
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3306
+          MYSQL_USER: root
+          MYSQL_PASSWORD: root
+          MYSQL_DATABASE: housing_app
+        run: |
+          pytest -q tests/test_integration_db.py

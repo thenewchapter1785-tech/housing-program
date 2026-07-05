@@ -144,8 +144,36 @@ Security controls in web mode:
 - Lister-added properties are stored in manual listing tables and synced into `master_listings`
 - Master listing source tracking records where each listing came from
 
+## Admin controls & observability
+
+**Audit logging:**
+- All critical actions logged to `audit_logs` table (user bans, admin role changes, etc.)
+- Accessible via GET /admin/audit-logs (admin-only)
+
+**Provider reliability scoring:**
+- Track success/failure rate per provider in `provider_stats` table
+- Automatic scoring based on success rate
+- Accessible via GET /admin/provider-stats (admin-only)
+
+**Admin user management:**
+- POST /admin/users/{id}/make-admin - grant admin role
+- POST /admin/users/{id}/ban - ban user with reason
+- Audit log on all admin actions
+
+**Structured logging:**
+- JSON-formatted logs for observability
+- All key events (auth, search, refresh) logged with context
+- Configurable via LOG_LEVEL env var
+
+## Integration test stack
+
+- Unit tests: JWT, migrations, API auth flows
+- Integration tests: MySQL-backed audit logs, provider stats, user flags
+- CI runs both unit and integration tests with MySQL service
+
 ## Next steps
 
 - Add endpoint-level integration tests with test containers
 - Add role-specific UI tests for desktop tabs
 - Add migration CI check before deployment
+- Add secret rotation and compliance workflows

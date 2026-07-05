@@ -428,3 +428,52 @@ def refresh_now(user: dict = Depends(get_current_user)) -> Dict[str, int]:
         raise HTTPException(status_code=403, detail="Insufficient role for refresh")
     updated = ctx.scheduler.run_once()
     return {"updated_records": updated}
+
+
+@app.get("/admin/audit-logs")
+def get_audit_logs(limit: int = 100, offset: int = 0, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    ctx = get_ctx()
+    if not ctx.storage.is_user_admin(int(user["id"])):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    logs = ctx.storage.get_audit_logs(limit=limit, offset=offset)
+    return {"logs": _serialize_items(logs), "count": len(logs)}
+
+
+@app.get("/admin/provider-stats")
+def get_provider_stats(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    ctx = get_ctx()
+    if not ctx.storage.is_user_admin(int(user["id"])):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    stats = ctx.storage.get_provider_stats()
+    return {"providers": _serialize_items(stats), "count": len(stats)}
+
+
+@app.post("/admin/users/{target_user_id}/make-admin")
+def make_user_admin(target_user_id: int, user: dict = Depends(get_current_user)) -> Dict[str, str]:
+    ctx = get_ctx()
+    if not ctx.storage.is_user_admin(int(user["id"])):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    ctx.storage.set_user_admin(target_user_id, True)
+    ctx.storage.log_audit_event(
+        user_id=int(user["id"]),
+        action="make_admin",
+        resource_type="user",
+        resource_id=target_user_id,
+    )
+    return {"message": f"User {target_user_id} is now admin"}
+
+
+@app.post("/admin/users/{target_user_id}/ban")
+def ban_user_endpoint(target_user_id: int, reason: Optional[str] = None, user: dict = Depends(get_current_user)) -> Dict[str, str]:
+    ctx = get_ctx()
+    if not ctx.storage.is_user_admin(int(user["id"])):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    ctx.storage.ban_user(target_user_id, reason=reason)
+    ctx.storage.log_audit_event(
+        user_id=int(user["id"]),
+        action="ban_user",
+        resource_type="user",
+        resource_id=target_user_id,
+        details={"reason": reason},
+    )
+    return {"message": f"User {target_user_id} has been banned"}
