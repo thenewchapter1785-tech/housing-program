@@ -65,6 +65,7 @@ class StorageManager:
                     location VARCHAR(255) NOT NULL,
                     price_max VARCHAR(50) NULL,
                     query_text VARCHAR(255) NOT NULL,
+                    notes TEXT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
                 )
@@ -89,6 +90,20 @@ class StorageManager:
                     contact_method VARCHAR(100) NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (search_id) REFERENCES searches(id) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS favorites (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    result_id BIGINT NOT NULL,
+                    notes TEXT NULL,
+                    saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (result_id) REFERENCES search_results(id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_favorite (user_id, result_id)
                 )
                 """
             )
@@ -185,3 +200,239 @@ class StorageManager:
                 (search_id,),
             )
             return cursor.fetchall()
+
+    def get_user_searches(
+        self, user_id: int, limit: int = 10
+    ) -> List[dict]:
+        """Get recent searches for a user."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, location, query_text, price_max, created_at
+                FROM searches
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
+            return cursor.fetchall()
+
+    def get_search_by_id(self, search_id: int) -> Optional[dict]:
+        """Get search details by ID."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM searches WHERE id = %s",
+                (search_id,),
+            )
+            return cursor.fetchone()
+
+    def delete_search(self, search_id: int) -> bool:
+        """Delete a search and all its results."""
+        if self.connection is None:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute("DELETE FROM search_results WHERE search_id = %s", (search_id,))
+                cursor.execute("DELETE FROM searches WHERE id = %s", (search_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting search: {e}")
+            return False
+
+    def update_search_notes(self, search_id: int, notes: str) -> bool:
+        """Add or update notes for a search."""
+        if self.connection is None:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE searches SET notes = %s WHERE id = %s",
+                    (notes, search_id),
+                )
+            return True
+        except Exception:
+            # Notes column may not exist yet, will be added in schema migration
+            return False
+
+    def get_results_by_filter(
+        self,
+        search_id: int,
+        voucher_only: bool = False,
+        record_only: bool = False,
+        source: Optional[str] = None,
+    ) -> List[dict]:
+        """Get filtered results from a search."""
+        if self.connection is None:
+            self.connect()
+        
+        query = "SELECT * FROM search_results WHERE search_id = %s"
+        params = [search_id]
+        
+        if voucher_only:
+            query += " AND voucher_friendly = 1"
+        if record_only:
+            query += " AND record_friendly = 1"
+        if source:
+            query += " AND source = %s"
+            params.append(source)
+        
+        query += " ORDER BY id DESC"
+        
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    def get_statistics(self, search_id: int) -> dict:
+        """Get search statistics."""
+        if self.connection is None:
+            self.connect()
+        
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) as total FROM search_results WHERE search_id = %s",
+                (search_id,),
+            )
+            total = cursor.fetchone()["total"]
+            
+            cursor.execute(
+                "SELECT COUNT(*) as voucher_count FROM search_results WHERE search_id = %s AND voucher_friendly = 1",
+                (search_id,),
+            )
+            voucher_count = cursor.fetchone()["voucher_count"]
+            
+            cursor.execute(
+                "SELECT COUNT(*) as record_count FROM search_results WHERE search_id = %s AND record_friendly = 1",
+                (search_id,),
+            )
+            record_count = cursor.fetchone()["record_count"]
+            
+            cursor.execute(
+                "SELECT source, COUNT(*) as count FROM search_results WHERE search_id = %s GROUP BY source ORDER BY count DESC",
+                (search_id,),
+            )
+            sources = cursor.fetchall()
+        
+        return {
+            "total_listings": total,
+            "voucher_friendly": voucher_count,
+            "record_friendly": record_count,
+            "by_source": sources,
+        }
+
+    def search_listings(
+        self,
+        location: Optional[str] = None,
+        keyword: Optional[str] = None,
+        voucher_only: bool = False,
+        record_only: bool = False,
+        limit: int = 50,
+    ) -> List[dict]:
+        """Search across all past search results."""
+        if self.connection is None:
+            self.connect()
+        
+        query = "SELECT * FROM search_results WHERE 1=1"
+        params = []
+        
+        if location:
+            query += " AND location LIKE %s"
+            params.append(f"%{location}%")
+        if keyword:
+            query += " AND (title LIKE %s OR description LIKE %s)"
+            params.extend([f"%{keyword}%", f"%{keyword}%"])
+        if voucher_only:
+            query += " AND voucher_friendly = 1"
+        if record_only:
+            query += " AND record_friendly = 1"
+        
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+        
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    def save_favorite(
+        self, user_id: int, result_id: int, notes: Optional[str] = None
+    ) -> bool:
+        """Save a listing as favorite."""
+        if self.connection is None:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO favorites (user_id, result_id, notes) VALUES (%s, %s, %s)",
+                    (user_id, result_id, notes),
+                )
+            return True
+        except Exception as e:
+            # Listing already favorited
+            if "Duplicate entry" in str(e):
+                return False
+            print(f"Error saving favorite: {e}")
+            return False
+
+    def remove_favorite(self, user_id: int, result_id: int) -> bool:
+        """Remove a saved favorite."""
+        if self.connection is None:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM favorites WHERE user_id = %s AND result_id = %s",
+                    (user_id, result_id),
+                )
+            return True
+        except Exception as e:
+            print(f"Error removing favorite: {e}")
+            return False
+
+    def get_user_favorites(self, user_id: int) -> List[dict]:
+        """Get all favorited listings for a user."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT sr.*, f.notes as favorite_notes, f.saved_at
+                FROM favorites f
+                JOIN search_results sr ON f.result_id = sr.id
+                WHERE f.user_id = %s
+                ORDER BY f.saved_at DESC
+                """,
+                (user_id,),
+            )
+            return cursor.fetchall()
+
+    def is_favorite(self, user_id: int, result_id: int) -> bool:
+        """Check if a listing is favorited."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM favorites WHERE user_id = %s AND result_id = %s",
+                (user_id, result_id),
+            )
+            return cursor.fetchone() is not None
+
+    def update_favorite_notes(
+        self, user_id: int, result_id: int, notes: str
+    ) -> bool:
+        """Update notes for a favorited listing."""
+        if self.connection is None:
+            self.connect()
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE favorites SET notes = %s WHERE user_id = %s AND result_id = %s",
+                    (notes, user_id, result_id),
+                )
+            return True
+        except Exception as e:
+            print(f"Error updating favorite notes: {e}")
+            return False
