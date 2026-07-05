@@ -12,11 +12,15 @@ class RentometerScraper(BaseScraper):
 
     def scrape(self, city: str, query: str) -> List[Listing]:
         search_url = f"https://www.rentometer.com/price-rent-estimates/{city.lower().replace(' ', '-')}/"
-        response = requests.get(search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(
+            search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        title = soup.title.get_text(" ", strip=True) if soup.title else "Rentometer page"
+        title = (
+            soup.title.get_text(" ", strip=True) if soup.title else "Rentometer page"
+        )
         return [
             Listing(
                 title=title,

@@ -17,7 +17,12 @@ class Collector:
             name: scraper_cls() for name, scraper_cls in get_scraper_map().items()
         }
 
-    def run(self, providers: List[str] | None = None, city: str | None = None, query: str | None = None) -> List[Listing]:
+    def run(
+        self,
+        providers: List[str] | None = None,
+        city: str | None = None,
+        query: str | None = None,
+    ) -> List[Listing]:
         listings: List[Listing] = []
         providers = providers or ["example"]
         city = city or self.settings.city

@@ -49,7 +49,11 @@ def run_menu() -> None:
             session = history.get_session(int(session_id))
             if session:
                 print(f"\nReopened session {session.id}: {session.title}")
-                print(ResultFormatter().format_results([Listing(**result) for result in session.results]))
+                print(
+                    ResultFormatter().format_results(
+                        [Listing(**result) for result in session.results]
+                    )
+                )
             else:
                 print("Session not found")
         manager.close()
@@ -61,7 +65,9 @@ def run_menu() -> None:
         password = input("Password: ").strip()
         display_name = prompt_text("Display name", email.split("@", 1)[0])
         try:
-            current_user = register_user(manager, email=email, password=password, display_name=display_name)
+            current_user = register_user(
+                manager, email=email, password=password, display_name=display_name
+            )
             print(f"Account created for {current_user['email']}")
         except ValueError as exc:
             print(str(exc))
@@ -71,7 +77,9 @@ def run_menu() -> None:
         email = prompt_text("Google email")
         google_id = input("Google account ID or token: ").strip() or email
         display_name = prompt_text("Display name", email.split("@", 1)[0])
-        current_user = register_google_user(manager, email=email, google_id=google_id, display_name=display_name)
+        current_user = register_google_user(
+            manager, email=email, google_id=google_id, display_name=display_name
+        )
         print(f"Google account linked for {current_user['email']}")
     else:
         email = prompt_text("Email")
@@ -87,7 +95,12 @@ def run_menu() -> None:
     query = prompt_text("Search query", "studio apartment")
     price_max = prompt_text("Maximum price", "1500")
 
-    search_id = manager.create_search(user_id=current_user["id"] if current_user else None, location=location, price_max=price_max, query_text=query)
+    search_id = manager.create_search(
+        user_id=current_user["id"] if current_user else None,
+        location=location,
+        price_max=price_max,
+        query_text=query,
+    )
 
     collector = Collector()
     listings = collector.run(

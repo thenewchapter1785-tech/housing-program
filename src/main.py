@@ -9,9 +9,18 @@ def main() -> None:
     parser.add_argument("--city", default="seattle", help="City to search")
     parser.add_argument("--query", default="studio apartment", help="Search query")
     parser.add_argument("--price-max", default="1500", help="Maximum price to keep")
-    parser.add_argument("--providers", nargs="*", default=["craigslist", "rentals", "padmapper", "rightmove", "example"], help="Providers to run")
-    parser.add_argument("--menu", action="store_true", help="Launch the interactive menu")
-    parser.add_argument("--ui-shell", action="store_true", help="Initialize the future Windows UI shell")
+    parser.add_argument(
+        "--providers",
+        nargs="*",
+        default=["craigslist", "rentals", "padmapper", "rightmove", "example"],
+        help="Providers to run",
+    )
+    parser.add_argument(
+        "--menu", action="store_true", help="Launch the interactive menu"
+    )
+    parser.add_argument(
+        "--ui-shell", action="store_true", help="Initialize the future Windows UI shell"
+    )
     args = parser.parse_args()
 
     if args.ui_shell:

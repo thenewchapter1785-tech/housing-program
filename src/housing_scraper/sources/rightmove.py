@@ -12,7 +12,9 @@ class RightmoveScraper(BaseScraper):
 
     def scrape(self, city: str, query: str) -> List[Listing]:
         search_url = f"https://www.rightmove.co.uk/property-for-rent/find.html?locationIdentifier=REGION%3A{city.lower().replace(' ', '+')}&maxBedrooms=2&minBedrooms=1"
-        response = requests.get(search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(
+            search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")

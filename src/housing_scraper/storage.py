@@ -5,7 +5,15 @@ import pymysql
 
 
 class StorageManager:
-    def __init__(self, host: str, port: int, user: str, password: str, database: str, autostart: bool = True):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database: str,
+        autostart: bool = True,
+    ):
         self.host = host
         self.port = port
         self.user = user
@@ -85,7 +93,13 @@ class StorageManager:
                 """
             )
 
-    def create_user(self, email: str, password_hash: str, display_name: Optional[str] = None, google_id: Optional[str] = None) -> int:
+    def create_user(
+        self,
+        email: str,
+        password_hash: str,
+        display_name: Optional[str] = None,
+        google_id: Optional[str] = None,
+    ) -> int:
         if self.connection is None:
             self.connect()
         with self.connection.cursor() as cursor:
@@ -102,7 +116,13 @@ class StorageManager:
             cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
             return cursor.fetchone()
 
-    def create_search(self, user_id: Optional[int], location: str, price_max: Optional[str], query_text: str) -> int:
+    def create_search(
+        self,
+        user_id: Optional[int],
+        location: str,
+        price_max: Optional[str],
+        query_text: str,
+    ) -> int:
         if self.connection is None:
             self.connect()
         with self.connection.cursor() as cursor:

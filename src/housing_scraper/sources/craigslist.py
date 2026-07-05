@@ -13,7 +13,9 @@ class CraigslistScraper(BaseScraper):
     def scrape(self, city: str, query: str) -> List[Listing]:
         city_slug = city.lower().replace(" ", "")
         search_url = f"https://www.craigslist.org/search/area/{city_slug}?cat=apa&query={query.replace(' ', '%20')}"
-        response = requests.get(search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(
+            search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
@@ -26,7 +28,9 @@ class CraigslistScraper(BaseScraper):
 
             title = title_tag.get_text(" ", strip=True)
             link = title_tag.get("href") or ""
-            full_url = link if link.startswith("http") else f"https://www.craigslist.org{link}"
+            full_url = (
+                link if link.startswith("http") else f"https://www.craigslist.org{link}"
+            )
             price = price_tag.get_text(" ", strip=True) if price_tag else None
 
             listings.append(

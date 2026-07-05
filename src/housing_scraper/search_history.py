@@ -17,7 +17,9 @@ class SearchHistory:
         self.sessions: Dict[int, SearchSession] = {}
         self.next_id = 1
 
-    def add_session(self, location: str, query: str, price_max: Optional[str], results: List[dict]) -> SearchSession:
+    def add_session(
+        self, location: str, query: str, price_max: Optional[str], results: List[dict]
+    ) -> SearchSession:
         session = SearchSession(
             id=self.next_id,
             title=f"{location} · {query}",

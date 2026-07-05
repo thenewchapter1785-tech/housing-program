@@ -11,12 +11,18 @@ class NeighborlyScraper(BaseScraper):
     name = "neighborly"
 
     def scrape(self, city: str, query: str) -> List[Listing]:
-        search_url = f"https://www.neighborly.com/search?query={query.replace(' ', '+')}"
-        response = requests.get(search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        search_url = (
+            f"https://www.neighborly.com/search?query={query.replace(' ', '+')}"
+        )
+        response = requests.get(
+            search_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        title = soup.title.get_text(" ", strip=True) if soup.title else "Neighborly page"
+        title = (
+            soup.title.get_text(" ", strip=True) if soup.title else "Neighborly page"
+        )
         return [
             Listing(
                 title=title,
