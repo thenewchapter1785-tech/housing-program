@@ -100,6 +100,41 @@ Run locally:
 python src/main.py --platform web
 ```
 
+## DigitalOcean Deployment
+
+Deploy to DigitalOcean with App Platform (recommended), Droplets, or Kubernetes:
+
+### App Platform (One-Click)
+```bash
+# See deploy/digitalocean.md for detailed instructions
+./scripts/deploy_digitalocean_app.sh
+```
+
+Or visit https://cloud.digitalocean.com/apps and select `.do/app.yaml` from this repo.
+
+### Droplet (Traditional VPS)
+```bash
+./scripts/deploy_digitalocean_droplet.sh housing-web nyc3 s-2vcpu-4gb
+```
+
+See [deploy/digitalocean.md](deploy/digitalocean.md) for:
+- One-click App Platform deployment
+- Manual Droplet setup with Docker Compose
+- Kubernetes cluster deployment
+- Monitoring, backups, and scaling
+- Cost estimation and troubleshooting
+
+### Environment Setup
+Copy environment template and customize:
+```bash
+cp .env.digitalocean .env
+# Update WEB_JWT_SECRET, WEB_ALLOWED_ORIGINS, database credentials
+```
+
+### GitHub Actions Auto-Deployment
+Add `DIGITALOCEAN_TOKEN` secret to your GitHub repo to enable auto-deployment on push to master.
+```
+
 Run with Docker:
 ```bash
 docker build -t housing-platform .

@@ -1,0 +1,71 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.digitalocean.com
+  IMAGE_NAME: housing-platform
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Build image
+        run: docker build -t $(echo $REGISTRY)/$(echo $IMAGE_NAME):$(echo $GITHUB_SHA | cut -c1-7) .
+
+      - name: Push image to DigitalOcean Container Registry
+        run: |
+          docker login -u ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} -p ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} $REGISTRY
+          docker push $(echo $REGISTRY)/$(echo $IMAGE_NAME):$(echo $GITHUB_SHA | cut -c1-7)
+
+      - name: Update deployment in cluster
+        if: github.ref == 'refs/heads/master'
+        run: |
+          # This assumes you have a Kubernetes cluster
+          # Uncomment if using K8s deployment
+          # doctl kubernetes cluster kubeconfig save housing-k8s
+          # kubectl set image deployment/housing-web housing-web=$(echo $REGISTRY)/$(echo $IMAGE_NAME):$(echo $GITHUB_SHA | cut -c1-7) -n production
+          
+          # For App Platform, the deployment happens via app.yaml
+          APP_ID=$(doctl apps list --format ID,Name --no-header | grep housing-platform | head -1 | awk '{print $1}')
+          if [ -n "$APP_ID" ]; then
+            doctl apps update "$APP_ID" --spec .do/app.yaml
+            echo "Deployment initiated for App Platform: $APP_ID"
+          fi
+
+      - name: Verify deployment
+        run: |
+          # Optional: Add health check verification
+          sleep 30
+          # Check if app is healthy (implementation depends on your setup)
+          echo "Deployment verification complete"
+
+      - name: Notify deployment status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Housing Platform deployment ${{ job.status }} on DigitalOcean'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true

@@ -1,0 +1,118 @@
+name: housing-platform
+region: nyc
+
+services:
+  # FastAPI Web Server
+  - name: web
+    github:
+      repo: thenewchapter1785-tech/housing-program
+      branch: master
+      deploy_on_push: true
+    build_command: pip install -r requirements.txt
+    run_command: python src/main.py --platform web
+    http_port: 8000
+    instance_count: 2
+    instance_size_slug: basic-s
+    envs:
+      - key: PYTHONPATH
+        value: /app/src
+      - key: WEB_HOST
+        value: 0.0.0.0
+      - key: WEB_PORT
+        value: "8000"
+      - key: AUTO_REFRESH_IN_WEB
+        value: "false"
+      - key: MYSQL_HOST
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.host}
+      - key: MYSQL_PORT
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.port}
+      - key: MYSQL_USER
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.username}
+      - key: MYSQL_PASSWORD
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.password}
+      - key: MYSQL_DATABASE
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.db}
+      - key: WEB_JWT_SECRET
+        scope: RUN_TIME
+        value: ${WEB_JWT_SECRET}
+      - key: WEB_JWT_ALG
+        value: HS256
+      - key: WEB_ACCESS_TTL_MINUTES
+        value: "30"
+      - key: WEB_REFRESH_TTL_DAYS
+        value: "14"
+      - key: WEB_ALLOWED_ORIGINS
+        value: https://${app.domain}
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      unhealthy_threshold: 3
+    http_routes:
+      - path: /
+
+  # Background Worker Service
+  - name: worker
+    github:
+      repo: thenewchapter1785-tech/housing-program
+      branch: master
+      deploy_on_push: true
+    build_command: pip install -r requirements.txt
+    run_command: python src/main.py --platform worker
+    instance_count: 1
+    instance_size_slug: basic-xs
+    envs:
+      - key: PYTHONPATH
+        value: /app/src
+      - key: AUTO_REFRESH_ENABLED
+        value: "true"
+      - key: AUTO_REFRESH_INTERVAL_SECONDS
+        value: "900"
+      - key: AUTO_REFRESH_QUERY
+        value: apartment
+      - key: AUTO_REFRESH_PROVIDERS
+        value: craigslist,rentals,padmapper,rightmove
+      - key: MYSQL_HOST
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.host}
+      - key: MYSQL_PORT
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.port}
+      - key: MYSQL_USER
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.username}
+      - key: MYSQL_PASSWORD
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.password}
+      - key: MYSQL_DATABASE
+        scope: RUN_AND_BUILD_TIME
+        value: ${db.db}
+
+databases:
+  - name: db
+    engine: MYSQL
+    version: "8.0"
+    production: true
+
+static_sites:
+  - name: docs
+    github:
+      repo: thenewchapter1785-tech/housing-program
+      branch: master
+      deploy_on_push: false
+    source_dir: docs
+    routes:
+      - path: /docs
+
+ingress:
+  rules:
+    - match:
+        prefix: /
+      redirect:
+        redirect_code: HTTP_TO_HTTPS

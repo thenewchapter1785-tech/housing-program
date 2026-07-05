@@ -72,3 +72,26 @@ jobs:
           MYSQL_DATABASE: housing_app
         run: |
           pytest -q tests/test_integration_db.py
+
+      - name: Deploy to DigitalOcean App Platform
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          # Install doctl
+          wget https://github.com/digitalocean/doctl/releases/download/v1.100.0/doctl-1.100.0-linux-amd64.tar.gz
+          tar xf doctl-*.tar.gz
+          sudo mv doctl /usr/local/bin
+          
+          # Authenticate
+          doctl auth init --access-token "$DIGITALOCEAN_TOKEN"
+          
+          # Deploy
+          APP_ID=$(doctl apps list --format ID,Name --no-header | grep housing-platform | head -1 | awk '{print $1}')
+          if [ -n "$APP_ID" ]; then
+            doctl apps update "$APP_ID" --spec .do/app.yaml
+            echo "Updated existing app: $APP_ID"
+          else
+            doctl apps create --spec .do/app.yaml
+            echo "Created new app"
+          fi
