@@ -24,9 +24,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--platform",
-        choices=["desktop", "web", "cli"],
+        choices=["desktop", "web", "worker", "cli"],
         default="desktop",
-        help="Runtime target: desktop app flow, secure web API, or collector CLI",
+        help="Runtime target: desktop app, secure web API, refresh worker, or collector CLI",
     )
     args = parser.parse_args()
 
@@ -48,6 +48,12 @@ def main() -> None:
         from web.main import main as run_web
 
         run_web()
+        return
+
+    if args.platform == "worker":
+        from worker.main import main as run_worker
+
+        run_worker()
         return
 
     collector = Collector()

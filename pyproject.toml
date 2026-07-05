@@ -12,7 +12,9 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn>=0.30.0",
   "pydantic[email]>=2.8.2",
-  "pyinstaller>=6.10.0"
+  "pyinstaller>=6.10.0",
+  "PyJWT>=2.9.0",
+  "pytest>=8.3.3"
 ]
 
 [tool.black]

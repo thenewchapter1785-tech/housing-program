@@ -4,6 +4,8 @@ from typing import List, Optional
 
 import pymysql
 
+from .migrations import MigrationManager
+
 
 class StorageManager:
     def __init__(
@@ -45,6 +47,7 @@ class StorageManager:
     def ensure_schema(self):
         if self.connection is None:
             self.connect()
+        self.run_migrations()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -122,6 +125,26 @@ class StorageManager:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_refresh_tokens (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    token_hash CHAR(64) NOT NULL UNIQUE,
+                    expires_at TIMESTAMP NOT NULL,
+                    revoked TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    INDEX idx_refresh_user_active (user_id, revoked, expires_at)
+                )
+                """
+            )
+
+    def run_migrations(self) -> int:
+        if self.connection is None:
+            self.connect()
+        manager = MigrationManager(self.connection)
+        return manager.apply_all()
 
     def create_user(
         self,
@@ -501,5 +524,53 @@ class StorageManager:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE auth_sessions SET revoked = 1 WHERE user_id = %s",
+                (user_id,),
+            )
+
+    def create_refresh_token(self, user_id: int, token_hash: str, expires_at: datetime) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO auth_refresh_tokens (user_id, token_hash, expires_at)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, token_hash, expires_at),
+            )
+
+    def get_user_by_refresh_token_hash(self, token_hash: str) -> Optional[dict]:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT u.*
+                FROM auth_refresh_tokens t
+                JOIN users u ON u.id = t.user_id
+                WHERE t.token_hash = %s
+                  AND t.revoked = 0
+                  AND t.expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
+                """,
+                (token_hash,),
+            )
+            return cursor.fetchone()
+
+    def revoke_refresh_token(self, token_hash: str) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE auth_refresh_tokens SET revoked = 1 WHERE token_hash = %s",
+                (token_hash,),
+            )
+
+    def revoke_all_user_refresh_tokens(self, user_id: int) -> None:
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE auth_refresh_tokens SET revoked = 1 WHERE user_id = %s",
                 (user_id,),
             )

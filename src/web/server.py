@@ -1,18 +1,17 @@
 import os
-import hashlib
-import secrets
 import threading
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import ExpiredSignatureError, InvalidTokenError
 from pydantic import BaseModel, EmailStr, Field
 
 from housing_scraper.auth_manager import AuthManager
 from housing_scraper.area_refresher import AreaRefreshScheduler
 from housing_scraper.filter_builder import FilterBuilder
+from housing_scraper.jwt_auth import JwtService
 from housing_scraper.master_listing_db import MasterListingDatabase
 from housing_scraper.role_auth import GovernmentEmailValidator, RoleBasedAuthManager
 from housing_scraper.search_manager import SearchManager
@@ -35,6 +34,10 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     remember_me: bool = False
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class SearchRequest(BaseModel):
@@ -72,6 +75,7 @@ class AppContext:
         self.master_db.ensure_schema()
 
         self.auth_manager = AuthManager(self.storage)
+        self.jwt_service = JwtService()
         self.role_auth = RoleBasedAuthManager(self.storage)
         self.role_auth.ensure_role_schema()
 
@@ -108,23 +112,26 @@ def _serialize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return output
 
 
-def _token_from_user(user_id: int) -> str:
-    token = secrets.token_urlsafe(48)
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    ttl_hours = int(os.getenv("WEB_SESSION_TTL_HOURS", "24"))
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
-    ctx.storage.create_auth_session(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
-    return token
+def _issue_token_pair(user: dict, role: str) -> Dict[str, Any]:
+    access_token = ctx.jwt_service.create_access_token(user=user, role=role)
+    refresh_token = ctx.jwt_service.create_refresh_token(user=user, role=role)
+    refresh_hash = ctx.jwt_service.hash_token(refresh_token)
+    refresh_payload = ctx.jwt_service.decode(refresh_token)
+    exp_ts = int(refresh_payload["exp"])
+    from datetime import datetime, timezone
 
-
-def _resolve_user_from_token(token: str) -> Optional[dict]:
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    return ctx.storage.get_user_by_auth_token_hash(token_hash)
-
-
-def _revoke_token(token: str) -> None:
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    ctx.storage.revoke_auth_session(token_hash)
+    expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+    ctx.storage.create_refresh_token(
+        user_id=int(user["id"]),
+        token_hash=refresh_hash,
+        expires_at=expires_at,
+    )
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "access_expires_minutes": ctx.jwt_service.access_ttl_minutes,
+    }
 
 
 def get_current_user(
@@ -136,7 +143,25 @@ def get_current_user(
             detail="Missing bearer token",
         )
 
-    user = _resolve_user_from_token(creds.credentials)
+    try:
+        payload = ctx.jwt_service.decode(creds.credentials)
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token expired",
+        )
+    except InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    user = ctx.storage.get_user_by_email(str(payload.get("email", "")))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -152,7 +177,7 @@ def healthz() -> Dict[str, str]:
 
 @app.on_event("startup")
 def startup_event() -> None:
-    if os.getenv("AUTO_REFRESH_ENABLED", "true").lower() not in {"true", "1", "yes"}:
+    if os.getenv("AUTO_REFRESH_IN_WEB", "false").lower() not in {"true", "1", "yes"}:
         return
     interval = int(os.getenv("AUTO_REFRESH_INTERVAL_SECONDS", "900"))
     ctx.scheduler_thread = threading.Thread(
@@ -179,8 +204,8 @@ def register_searcher(payload: RegisterSearcherRequest) -> Dict[str, Any]:
     if not success or user is None:
         raise HTTPException(status_code=400, detail=message)
 
-    token = _token_from_user(int(user["id"]))
-    return {"message": message, "token": token, "user": user, "role": "searcher"}
+    tokens = _issue_token_pair(user, role="searcher")
+    return {"message": message, "tokens": tokens, "user": user, "role": "searcher"}
 
 
 @app.post("/auth/register/lister")
@@ -207,10 +232,10 @@ def register_lister(payload: RegisterListerRequest) -> Dict[str, Any]:
     if not success or user is None:
         raise HTTPException(status_code=400, detail=message)
 
-    token = _token_from_user(int(user["id"]))
+    tokens = _issue_token_pair(user, role="lister")
     return {
         "message": message,
-        "token": token,
+        "tokens": tokens,
         "user": user,
         "role": "lister",
         "government_type": gov_type,
@@ -228,20 +253,41 @@ def login(payload: LoginRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail=message)
 
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
-    token = _token_from_user(int(user["id"]))
-    return {"message": message, "token": token, "user": user, "role": role}
+    tokens = _issue_token_pair(user, role=role)
+    return {"message": message, "tokens": tokens, "user": user, "role": role}
 
 
 @app.post("/auth/logout")
 def logout(
-    creds: HTTPAuthorizationCredentials = Depends(security),
+    payload: RefreshRequest,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, str]:
-    if creds is None or not creds.credentials:
-        raise HTTPException(status_code=401, detail="Missing token")
-    _revoke_token(creds.credentials)
+    refresh_hash = ctx.jwt_service.hash_token(payload.refresh_token)
+    ctx.storage.revoke_refresh_token(refresh_hash)
     ctx.auth_manager.session_manager.end_session(int(user["id"]))
     return {"message": "Logged out"}
+
+
+@app.post("/auth/refresh")
+def refresh_tokens(payload: RefreshRequest) -> Dict[str, Any]:
+    try:
+        token_payload = ctx.jwt_service.decode(payload.refresh_token)
+        if token_payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token type")
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    refresh_hash = ctx.jwt_service.hash_token(payload.refresh_token)
+    user = ctx.storage.get_user_by_refresh_token_hash(refresh_hash)
+    if not user:
+        raise HTTPException(status_code=401, detail="Refresh token revoked or unknown")
+
+    role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
+    ctx.storage.revoke_refresh_token(refresh_hash)
+    tokens = _issue_token_pair(user, role=role)
+    return {"tokens": tokens, "user": user, "role": role}
 
 
 @app.get("/auth/me")

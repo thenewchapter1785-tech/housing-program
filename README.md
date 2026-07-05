@@ -57,6 +57,11 @@ Secure web API:
 python src/main.py --platform web
 ```
 
+Background refresh worker:
+```bash
+python src/main.py --platform worker
+```
+
 Legacy collector CLI:
 ```bash
 python src/main.py --platform cli --city seattle --query "studio apartment"
@@ -75,6 +80,11 @@ Notes:
 
 ## Secure web deployment
 
+Apply migrations first:
+```bash
+python scripts/apply_migrations.py
+```
+
 Run locally:
 ```bash
 python src/main.py --platform web
@@ -87,7 +97,7 @@ docker run --env-file .env -p 8000:8000 housing-platform
 ```
 
 Security controls in web mode:
-- Bearer-token protected API endpoints
+- JWT access tokens + rotating refresh tokens
 - Rate-limited login flow
 - Role checks on lister endpoints
 - Government-email requirement for lister account registration
@@ -98,12 +108,12 @@ Security controls in web mode:
 1. Automatic area-refresh scheduler:
 - Background refresh loop reads due areas from `area_tracking`
 - Refreshes provider data and syncs into `master_listings`
-- Web runtime controls via env: `AUTO_REFRESH_ENABLED`, `AUTO_REFRESH_INTERVAL_SECONDS`
+- Dedicated worker runtime via `--platform worker`
 
 2. Secure web deployment enhancements:
-- Persistent auth token sessions in MySQL (`auth_sessions` table)
+- Persistent refresh token sessions in MySQL (`auth_refresh_tokens` table)
 - HTTPS reverse proxy config via Nginx at `deploy/nginx/default.conf`
-- Docker Compose includes `nginx` service for TLS termination
+- Docker Compose includes `worker` and `nginx` services
 
 3. Native desktop GUI layer:
 - Tkinter desktop app at `src/ui/desktop_gui.py`
@@ -120,6 +130,6 @@ Security controls in web mode:
 
 ## Next steps
 
-- Add automated area refresh jobs for `area_tracking`
-- Add HTTPS termination (reverse proxy) in production
-- Add end-to-end tests for desktop and web flows
+- Add endpoint-level integration tests with test containers
+- Add role-specific UI tests for desktop tabs
+- Add migration CI check before deployment

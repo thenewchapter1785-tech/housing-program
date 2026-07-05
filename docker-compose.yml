@@ -22,8 +22,21 @@ services:
       MYSQL_PORT: 3306
       WEB_HOST: 0.0.0.0
       WEB_PORT: 8000
+      AUTO_REFRESH_IN_WEB: "false"
     ports:
       - "8000:8000"
+
+  worker:
+    build: .
+    depends_on:
+      - mysql
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      AUTO_REFRESH_ENABLED: "true"
+    command: ["python", "src/main.py", "--platform", "worker"]
 
   nginx:
     image: nginx:1.27-alpine
