@@ -4,6 +4,7 @@ from typing import Optional
 
 from .auth import authenticate_user, register_google_user, register_user
 from .collector import Collector
+from .filter_builder import FilterBuilder
 from .models import Listing
 from .result_formatter import ResultFormatter
 from .search_history import SearchHistory
@@ -91,14 +92,18 @@ def run_menu() -> None:
             return
         print(f"Signed in as {current_user['email']}")
 
-    location = prompt_text("Location", "Seattle")
-    query = prompt_text("Search query", "studio apartment")
-    price_max = prompt_text("Maximum price", "1500")
+    location = prompt_text("What city are you searching in?", "Seattle")
+    query = prompt_text("What type of housing?", "studio apartment")
+
+    # Initialize friendly filter builder
+    filter_builder = FilterBuilder()
+    filter_builder.quick_preset()
+    filter_builder.show_summary()
 
     search_id = manager.create_search(
         user_id=current_user["id"] if current_user else None,
         location=location,
-        price_max=price_max,
+        price_max=str(filter_builder.max_price or "no limit"),
         query_text=query,
     )
 
@@ -109,27 +114,24 @@ def run_menu() -> None:
         query=query,
     )
 
+    # Apply friendly filters
+    filtered_listings = filter_builder.apply_to_listings(listings)
+
     formatter = ResultFormatter()
-    formatted_text = formatter.format_results(listings)
+    formatted_text = formatter.format_results(filtered_listings)
     session = history.add_session(
         location=location,
         query=query,
-        price_max=price_max,
-        results=[listing.to_dict() for listing in listings],
+        price_max=str(filter_builder.max_price or "no limit"),
+        results=[listing.to_dict() for listing in filtered_listings],
     )
 
     print(f"\nSearch session {session.id}: {session.title}")
+    print(f"Found {len(filtered_listings)} matching listings")
+    filter_builder.show_summary()
     print(formatted_text)
 
-    for listing in listings:
-        if price_max:
-            try:
-                price_value = int(str(listing.price).replace("$", "").replace(",", ""))
-                if price_value > int(price_max):
-                    continue
-            except ValueError:
-                pass
-
+    for listing in filtered_listings:
         manager.insert_search_result(
             search_id=search_id,
             title=listing.title,
