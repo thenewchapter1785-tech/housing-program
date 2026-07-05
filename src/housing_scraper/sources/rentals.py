@@ -19,24 +19,43 @@ class RentalsScraper(BaseScraper):
 
         soup = BeautifulSoup(response.text, "lxml")
         listings: List[Listing] = []
-        for card in soup.select("a[href*='/rentals/']")[:6]:
-            title = card.get_text(" ", strip=True)
-            href = card.get("href") or ""
-            full_url = (
-                href if href.startswith("http") else f"https://www.rentals.com{href}"
-            )
-            if title:
+
+        # Parse rental property cards
+        for card in soup.select("[class*='listing-item'], [class*='property-card']")[:10]:
+            try:
+                title_elem = card.select_one("h2, h3, [class*='title']")
+                price_elem = card.select_one("[class*='price']")
+                link_elem = card.select_one("a[href]")
+
+                title = (
+                    title_elem.get_text(strip=True) if title_elem
+                    else "Rental Property"
+                )
+                price = (
+                    price_elem.get_text(strip=True) if price_elem
+                    else None
+                )
+                url = (
+                    link_elem.get("href", search_url) if link_elem
+                    else search_url
+                )
+                if not url.startswith("http"):
+                    url = f"https://www.rentals.com{url}"
+
                 listings.append(
                     Listing(
                         title=title,
-                        url=full_url,
+                        url=url,
                         source=self.name,
-                        price=None,
+                        price=price,
                         location=city,
                         description="Rentals.com listing",
                         voucher_friendly=True,
                         record_friendly=True,
-                        tags=["voucher", "record-friendly"],
+                        tags=["rental", "platform"],
                     )
                 )
-        return listings
+            except Exception:
+                continue
+
+        return listings if listings else []
