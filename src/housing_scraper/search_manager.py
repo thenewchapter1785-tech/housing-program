@@ -1,6 +1,7 @@
 """
 High-level search management combining database, filtering, and collection.
 Simplifies interaction between menu and database layer.
+Also updates master listing database with findings.
 """
 
 from typing import List, Optional, Dict, Any
@@ -8,16 +9,24 @@ from .models import Listing
 from .storage import StorageManager
 from .filter_builder import FilterBuilder
 from .collector import Collector
+from .master_listing_db import MasterListingDatabase
 
 
 class SearchManager:
     """Manages searches, results, and user data with friendly database integration."""
 
-    def __init__(self, storage: StorageManager):
+    def __init__(self, storage: StorageManager, master_db: Optional[MasterListingDatabase] = None):
         self.storage = storage
         self.current_user = None
         self.current_search_id = None
         self.current_results: List[Listing] = []
+        
+        # Initialize master database if provided
+        if master_db is None:
+            self.master_db = MasterListingDatabase(storage.connection)
+            self.master_db.ensure_schema()
+        else:
+            self.master_db = master_db
 
     def set_user(self, user: dict) -> None:
         """Set current authenticated user."""
@@ -31,7 +40,7 @@ class SearchManager:
         filter_builder: Optional[FilterBuilder] = None,
     ) -> Dict[str, Any]:
         """
-        Execute a full search: collect results, filter, store in DB.
+        Execute a full search: collect results, filter, store in DB, update master DB.
         Returns search metadata and results.
         """
         # Create search record
@@ -61,8 +70,9 @@ class SearchManager:
 
         self.current_results = filtered_listings
 
-        # Store results in database
+        # Store results in BOTH databases
         for listing in filtered_listings:
+            # User's search results database
             self.storage.insert_search_result(
                 search_id=self.current_search_id,
                 title=listing.title,
@@ -71,6 +81,18 @@ class SearchManager:
                 price=listing.price,
                 location=listing.location,
                 description=listing.description,
+                voucher_friendly=listing.voucher_friendly,
+                record_friendly=listing.record_friendly,
+            )
+            
+            # Master listing database (shared/aggregated)
+            self.master_db.add_or_update_listing(
+                title=listing.title,
+                location=location,
+                price=listing.price,
+                description=listing.description,
+                url=listing.url,
+                source=listing.source,
                 voucher_friendly=listing.voucher_friendly,
                 record_friendly=listing.record_friendly,
             )

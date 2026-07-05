@@ -1,11 +1,12 @@
 import argparse
 from housing_scraper.collector import Collector
 from housing_scraper.menu import run_menu
+from housing_scraper.app_launcher import AppLauncher
 from ui.app_shell import AppShell
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a housing listing search")
+    parser = argparse.ArgumentParser(description="Housing Search Platform")
     parser.add_argument("--city", default="seattle", help="City to search")
     parser.add_argument("--query", default="studio apartment", help="Search query")
     parser.add_argument("--price-max", default="1500", help="Maximum price to keep")
@@ -16,10 +17,13 @@ def main() -> None:
         help="Providers to run",
     )
     parser.add_argument(
-        "--menu", action="store_true", help="Launch the interactive menu"
+        "--menu", action="store_true", help="Launch the legacy interactive menu"
     )
     parser.add_argument(
         "--ui-shell", action="store_true", help="Initialize the future Windows UI shell"
+    )
+    parser.add_argument(
+        "--app", action="store_true", default=True, help="Launch the main application (default)"
     )
     args = parser.parse_args()
 
@@ -30,6 +34,11 @@ def main() -> None:
 
     if args.menu:
         run_menu()
+        return
+
+    if args.app:
+        launcher = AppLauncher()
+        launcher.run()
         return
 
     collector = Collector()
