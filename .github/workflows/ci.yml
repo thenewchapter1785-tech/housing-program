@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ["master", "main"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile check
+        run: |
+          python -m py_compile src/main.py
+          python -m py_compile src/web/server.py
+          python -m py_compile src/housing_scraper/storage.py
+          python -m py_compile src/housing_scraper/migrations.py
+          python -m py_compile src/housing_scraper/jwt_auth.py
+          python -m py_compile src/worker/main.py
+
+      - name: Run tests
+        run: |
+          pytest -q tests/test_jwt_auth.py tests/test_migrations_manager.py tests/test_api_auth_flow.py

@@ -85,6 +85,16 @@ Apply migrations first:
 python scripts/apply_migrations.py
 ```
 
+Run core test suite:
+```bash
+pytest -q tests/test_jwt_auth.py tests/test_migrations_manager.py tests/test_api_auth_flow.py
+```
+
+Run MySQL integration tests (optional):
+```bash
+RUN_MYSQL_INTEGRATION=true pytest -q tests/test_storage.py
+```
+
 Run locally:
 ```bash
 python src/main.py --platform web
@@ -114,6 +124,12 @@ Security controls in web mode:
 - Persistent refresh token sessions in MySQL (`auth_refresh_tokens` table)
 - HTTPS reverse proxy config via Nginx at `deploy/nginx/default.conf`
 - Docker Compose includes `worker` and `nginx` services
+- JWT access tokens + rotating refresh tokens for web auth
+
+## CI
+
+- GitHub Actions pipeline at `.github/workflows/ci.yml`
+- Runs compile checks and auth/migration/API tests on push and pull requests
 
 3. Native desktop GUI layer:
 - Tkinter desktop app at `src/ui/desktop_gui.py`

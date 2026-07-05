@@ -2,11 +2,19 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from housing_scraper.storage import StorageManager
+
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_MYSQL_INTEGRATION", "false").lower() not in {"true", "1", "yes"},
+    reason="MySQL integration test disabled. Set RUN_MYSQL_INTEGRATION=true to enable.",
+)
 
 
 def test_storage_manager_creates_table_and_insert():

@@ -83,10 +83,21 @@ class AppContext:
         self.scheduler_thread: Optional[threading.Thread] = None
 
 
-ctx = AppContext()
 security = HTTPBearer(auto_error=False)
 
 app = FastAPI(title="Housing Search API", version="1.0.0")
+_APP_CTX: Optional[AppContext] = None
+
+
+def get_ctx() -> AppContext:
+    injected = getattr(app.state, "ctx", None)
+    if injected is not None:
+        return injected
+
+    global _APP_CTX
+    if _APP_CTX is None:
+        _APP_CTX = AppContext()
+    return _APP_CTX
 
 allowed_origins = os.getenv("WEB_ALLOWED_ORIGINS", "http://localhost:3000").split(","
 )
@@ -113,6 +124,7 @@ def _serialize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _issue_token_pair(user: dict, role: str) -> Dict[str, Any]:
+    ctx = get_ctx()
     access_token = ctx.jwt_service.create_access_token(user=user, role=role)
     refresh_token = ctx.jwt_service.create_refresh_token(user=user, role=role)
     refresh_hash = ctx.jwt_service.hash_token(refresh_token)
@@ -143,6 +155,7 @@ def get_current_user(
             detail="Missing bearer token",
         )
 
+    ctx = get_ctx()
     try:
         payload = ctx.jwt_service.decode(creds.credentials)
         if payload.get("type") != "access":
@@ -177,6 +190,7 @@ def healthz() -> Dict[str, str]:
 
 @app.on_event("startup")
 def startup_event() -> None:
+    ctx = get_ctx()
     if os.getenv("AUTO_REFRESH_IN_WEB", "false").lower() not in {"true", "1", "yes"}:
         return
     interval = int(os.getenv("AUTO_REFRESH_INTERVAL_SECONDS", "900"))
@@ -190,11 +204,13 @@ def startup_event() -> None:
 
 @app.on_event("shutdown")
 def shutdown_event() -> None:
+    ctx = get_ctx()
     ctx.scheduler.stop()
 
 
 @app.post("/auth/register/searcher")
 def register_searcher(payload: RegisterSearcherRequest) -> Dict[str, Any]:
+    ctx = get_ctx()
     success, message, user = ctx.role_auth.register_with_role(
         email=payload.email,
         password=payload.password,
@@ -210,6 +226,7 @@ def register_searcher(payload: RegisterSearcherRequest) -> Dict[str, Any]:
 
 @app.post("/auth/register/lister")
 def register_lister(payload: RegisterListerRequest) -> Dict[str, Any]:
+    ctx = get_ctx()
     is_gov, gov_type = GovernmentEmailValidator.is_government_email(payload.email)
     if not is_gov:
         raise HTTPException(
@@ -244,6 +261,7 @@ def register_lister(payload: RegisterListerRequest) -> Dict[str, Any]:
 
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> Dict[str, Any]:
+    ctx = get_ctx()
     success, message, user = ctx.auth_manager.login_with_validation(
         payload.email,
         payload.password,
@@ -262,6 +280,7 @@ def logout(
     payload: RefreshRequest,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, str]:
+    ctx = get_ctx()
     refresh_hash = ctx.jwt_service.hash_token(payload.refresh_token)
     ctx.storage.revoke_refresh_token(refresh_hash)
     ctx.auth_manager.session_manager.end_session(int(user["id"]))
@@ -270,6 +289,7 @@ def logout(
 
 @app.post("/auth/refresh")
 def refresh_tokens(payload: RefreshRequest) -> Dict[str, Any]:
+    ctx = get_ctx()
     try:
         token_payload = ctx.jwt_service.decode(payload.refresh_token)
         if token_payload.get("type") != "refresh":
@@ -292,12 +312,14 @@ def refresh_tokens(payload: RefreshRequest) -> Dict[str, Any]:
 
 @app.get("/auth/me")
 def me(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    ctx = get_ctx()
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
     return {"user": user, "role": role}
 
 
 @app.post("/search")
 def search(payload: SearchRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    ctx = get_ctx()
     filter_builder = FilterBuilder()
     filter_builder.voucher_accepted = payload.voucher_only if payload.voucher_only else None
     filter_builder.record_friendly = payload.record_only if payload.record_only else None
@@ -330,6 +352,7 @@ def add_listing(
     payload: AddListingRequest,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    ctx = get_ctx()
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
     if role != "lister" and role != "admin":
         raise HTTPException(
@@ -365,6 +388,7 @@ def get_master_listings(
     record_only: bool = False,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    ctx = get_ctx()
     if not location:
         raise HTTPException(status_code=400, detail="location is required")
 
@@ -386,6 +410,7 @@ def track_area(
     frequency_hours: int = 24,
     user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    ctx = get_ctx()
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
     if role not in {"admin", "lister"}:
         raise HTTPException(status_code=403, detail="Insufficient role for area tracking")
@@ -397,6 +422,7 @@ def track_area(
 
 @app.post("/admin/areas/refresh-now")
 def refresh_now(user: dict = Depends(get_current_user)) -> Dict[str, int]:
+    ctx = get_ctx()
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
     if role not in {"admin", "lister"}:
         raise HTTPException(status_code=403, detail="Insufficient role for refresh")

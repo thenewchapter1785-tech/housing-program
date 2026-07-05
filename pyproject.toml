@@ -14,7 +14,8 @@ dependencies = [
   "pydantic[email]>=2.8.2",
   "pyinstaller>=6.10.0",
   "PyJWT>=2.9.0",
-  "pytest>=8.3.3"
+  "pytest>=8.3.3",
+  "httpx>=0.28.1"
 ]
 
 [tool.black]
