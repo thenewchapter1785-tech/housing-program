@@ -18,17 +18,48 @@ class ZillowScraper(BaseScraper):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        title = soup.title.get_text(" ", strip=True) if soup.title else "Zillow page"
-        return [
-            Listing(
-                title=title,
-                url=search_url,
-                source=self.name,
-                price=None,
-                location=city,
-                description="Zillow search page",
-                voucher_friendly=True,
-                record_friendly=True,
-                tags=["voucher", "record-friendly"],
-            )
-        ]
+        listings: List[Listing] = []
+
+        # Parse Zillow home listings
+        for card in soup.select(
+            "[class*='ListItem'], [class*='PropertyCard'], article"
+        )[:10]:
+            try:
+                title_elem = card.select_one(
+                    "h2, [class*='title'], [class*='address']"
+                )
+                price_elem = card.select_one("[class*='price'], [class*='amount']")
+                link_elem = card.select_one("a[href*='/homes/']")
+
+                title = (
+                    title_elem.get_text(strip=True) if title_elem
+                    else "Zillow Listing"
+                )
+                price = (
+                    price_elem.get_text(strip=True) if price_elem
+                    else None
+                )
+                url = (
+                    link_elem.get("href", search_url) if link_elem
+                    else search_url
+                )
+                if not url.startswith("http"):
+                    url = f"https://www.zillow.com{url}"
+
+                listings.append(
+                    Listing(
+                        title=title,
+                        url=url,
+                        source=self.name,
+                        price=price,
+                        location=city,
+                        description="Zillow home listing",
+                        voucher_friendly=False,
+                        record_friendly=False,
+                        tags=["real-estate", "market-rate"],
+                    )
+                )
+            except Exception:
+                continue
+
+        return listings if listings else []

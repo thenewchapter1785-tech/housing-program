@@ -18,19 +18,50 @@ class RealtorScraper(BaseScraper):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        title = (
-            soup.title.get_text(" ", strip=True) if soup.title else "Realtor.com page"
-        )
-        return [
-            Listing(
-                title=title,
-                url=search_url,
-                source=self.name,
-                price=None,
-                location=city,
-                description="Realtor.com search page",
-                voucher_friendly=True,
-                record_friendly=True,
-                tags=["voucher", "record-friendly"],
-            )
-        ]
+        listings: List[Listing] = []
+
+        # Parse Realtor.com apartment listings
+        for card in soup.select(
+            "[class*='ListItem'], [class*='property-card'], [class*='apartment']"
+        )[:10]:
+            try:
+                title_elem = card.select_one(
+                    "h2, h3, [class*='title'], [class*='name']"
+                )
+                price_elem = card.select_one(
+                    "[class*='price'], [class*='rent'], .rentLabel"
+                )
+                link_elem = card.select_one("a[href]")
+
+                title = (
+                    title_elem.get_text(strip=True) if title_elem
+                    else "Realtor.com Listing"
+                )
+                price = (
+                    price_elem.get_text(strip=True) if price_elem
+                    else None
+                )
+                url = (
+                    link_elem.get("href", search_url) if link_elem
+                    else search_url
+                )
+                if not url.startswith("http"):
+                    url = f"https://www.realtor.com{url}"
+
+                listings.append(
+                    Listing(
+                        title=title,
+                        url=url,
+                        source=self.name,
+                        price=price,
+                        location=city,
+                        description="Realtor.com apartment listing",
+                        voucher_friendly=False,
+                        record_friendly=False,
+                        tags=["realtor", "mainstream"],
+                    )
+                )
+            except Exception:
+                continue
+
+        return listings if listings else []

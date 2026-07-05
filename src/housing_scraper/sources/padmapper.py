@@ -18,17 +18,48 @@ class PadmapperScraper(BaseScraper):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        title = soup.title.get_text(" ", strip=True) if soup.title else "Padmapper page"
-        return [
-            Listing(
-                title=title,
-                url=search_url,
-                source=self.name,
-                price=None,
-                location=city,
-                description="Padmapper listing context",
-                voucher_friendly=True,
-                record_friendly=True,
-                tags=["voucher", "record-friendly"],
-            )
-        ]
+        listings: List[Listing] = []
+
+        # Parse Padmapper listings
+        for card in soup.select(
+            "[class*='listing'], [class*='property'], [class*='apartment']"
+        )[:10]:
+            try:
+                title_elem = card.select_one(
+                    "h2, h3, [class*='title'], [class*='name']"
+                )
+                price_elem = card.select_one("[class*='price']")
+                link_elem = card.select_one("a[href]")
+
+                title = (
+                    title_elem.get_text(strip=True) if title_elem
+                    else "Padmapper Listing"
+                )
+                price = (
+                    price_elem.get_text(strip=True) if price_elem
+                    else None
+                )
+                url = (
+                    link_elem.get("href", search_url) if link_elem
+                    else search_url
+                )
+                if not url.startswith("http"):
+                    url = f"https://www.padmapper.com{url}"
+
+                listings.append(
+                    Listing(
+                        title=title,
+                        url=url,
+                        source=self.name,
+                        price=price,
+                        location=city,
+                        description="Padmapper apartment listing",
+                        voucher_friendly=False,
+                        record_friendly=False,
+                        tags=["padmapper", "aggregator"],
+                    )
+                )
+            except Exception:
+                continue
+
+        return listings if listings else []
