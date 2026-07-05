@@ -295,3 +295,59 @@ class MasterListingDatabase:
         with self.connection.cursor() as cursor:
             cursor.execute(query, params)
             return cursor.fetchall()
+
+    def track_area(self, area_name: str, frequency_hours: int = 24) -> bool:
+        """Create or update automatic refresh tracking for an area."""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO area_tracking (area_name, scrape_frequency_hours, active)
+                    VALUES (%s, %s, 1)
+                    ON DUPLICATE KEY UPDATE
+                        scrape_frequency_hours = VALUES(scrape_frequency_hours),
+                        active = 1
+                    """,
+                    (area_name, frequency_hours),
+                )
+            return True
+        except Exception as e:
+            print(f"Error tracking area: {e}")
+            return False
+
+    def list_due_areas(self) -> List[dict]:
+        """Return active areas that are due for refresh."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, area_name, scrape_frequency_hours, last_scrape
+                FROM area_tracking
+                WHERE active = 1
+                  AND (
+                    last_scrape IS NULL
+                    OR TIMESTAMPDIFF(HOUR, last_scrape, CURRENT_TIMESTAMP) >= scrape_frequency_hours
+                  )
+                ORDER BY last_scrape ASC
+                """
+            )
+            return cursor.fetchall()
+
+    def mark_area_scraped(self, area_name: str) -> None:
+        """Mark an area as successfully refreshed."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE area_tracking SET last_scrape = CURRENT_TIMESTAMP WHERE area_name = %s",
+                (area_name,),
+            )
+
+    def list_tracked_areas(self) -> List[dict]:
+        """Return all tracked areas and their refresh state."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, area_name, active, last_scrape, scrape_frequency_hours, created_at
+                FROM area_tracking
+                ORDER BY area_name ASC
+                """
+            )
+            return cursor.fetchall()

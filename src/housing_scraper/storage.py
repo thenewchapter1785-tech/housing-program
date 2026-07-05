@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import List, Optional
 
 import pymysql
@@ -104,6 +105,20 @@ class StorageManager:
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (result_id) REFERENCES search_results(id) ON DELETE CASCADE,
                     UNIQUE KEY unique_favorite (user_id, result_id)
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    token_hash CHAR(64) NOT NULL UNIQUE,
+                    expires_at TIMESTAMP NOT NULL,
+                    revoked TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    INDEX idx_user_active (user_id, revoked, expires_at)
                 )
                 """
             )
@@ -436,3 +451,55 @@ class StorageManager:
         except Exception as e:
             print(f"Error updating favorite notes: {e}")
             return False
+
+    def create_auth_session(self, user_id: int, token_hash: str, expires_at: datetime) -> None:
+        """Persist a web auth session token hash."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO auth_sessions (user_id, token_hash, expires_at)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, token_hash, expires_at),
+            )
+
+    def get_user_by_auth_token_hash(self, token_hash: str) -> Optional[dict]:
+        """Return user for valid, non-revoked, non-expired auth token hash."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT u.*
+                FROM auth_sessions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.token_hash = %s
+                  AND s.revoked = 0
+                  AND s.expires_at > CURRENT_TIMESTAMP
+                LIMIT 1
+                """,
+                (token_hash,),
+            )
+            return cursor.fetchone()
+
+    def revoke_auth_session(self, token_hash: str) -> None:
+        """Revoke one auth session by token hash."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE auth_sessions SET revoked = 1 WHERE token_hash = %s",
+                (token_hash,),
+            )
+
+    def revoke_all_user_auth_sessions(self, user_id: int) -> None:
+        """Revoke all auth sessions for a user."""
+        if self.connection is None:
+            self.connect()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE auth_sessions SET revoked = 1 WHERE user_id = %s",
+                (user_id,),
+            )

@@ -1,4 +1,8 @@
 import os
+import hashlib
+import secrets
+import threading
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -7,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
 from housing_scraper.auth_manager import AuthManager
+from housing_scraper.area_refresher import AreaRefreshScheduler
 from housing_scraper.filter_builder import FilterBuilder
 from housing_scraper.master_listing_db import MasterListingDatabase
 from housing_scraper.role_auth import GovernmentEmailValidator, RoleBasedAuthManager
@@ -70,6 +75,9 @@ class AppContext:
         self.role_auth = RoleBasedAuthManager(self.storage)
         self.role_auth.ensure_role_schema()
 
+        self.scheduler = AreaRefreshScheduler(self.master_db)
+        self.scheduler_thread: Optional[threading.Thread] = None
+
 
 ctx = AppContext()
 security = HTTPBearer(auto_error=False)
@@ -101,20 +109,22 @@ def _serialize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _token_from_user(user_id: int) -> str:
-    session = ctx.auth_manager.session_manager.get_session(user_id)
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No active session",
-        )
-    return str(session["token"])
+    token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    ttl_hours = int(os.getenv("WEB_SESSION_TTL_HOURS", "24"))
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+    ctx.storage.create_auth_session(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+    return token
 
 
 def _resolve_user_from_token(token: str) -> Optional[dict]:
-    for session in ctx.auth_manager.session_manager.sessions.values():
-        if str(session["token"]) == token:
-            return session["user"]
-    return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return ctx.storage.get_user_by_auth_token_hash(token_hash)
+
+
+def _revoke_token(token: str) -> None:
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    ctx.storage.revoke_auth_session(token_hash)
 
 
 def get_current_user(
@@ -140,6 +150,24 @@ def healthz() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+def startup_event() -> None:
+    if os.getenv("AUTO_REFRESH_ENABLED", "true").lower() not in {"true", "1", "yes"}:
+        return
+    interval = int(os.getenv("AUTO_REFRESH_INTERVAL_SECONDS", "900"))
+    ctx.scheduler_thread = threading.Thread(
+        target=ctx.scheduler.run_forever,
+        kwargs={"interval_seconds": interval},
+        daemon=True,
+    )
+    ctx.scheduler_thread.start()
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    ctx.scheduler.stop()
+
+
 @app.post("/auth/register/searcher")
 def register_searcher(payload: RegisterSearcherRequest) -> Dict[str, Any]:
     success, message, user = ctx.role_auth.register_with_role(
@@ -151,7 +179,7 @@ def register_searcher(payload: RegisterSearcherRequest) -> Dict[str, Any]:
     if not success or user is None:
         raise HTTPException(status_code=400, detail=message)
 
-    token = ctx.auth_manager.session_manager.create_session(user, remember_me=False)
+    token = _token_from_user(int(user["id"]))
     return {"message": message, "token": token, "user": user, "role": "searcher"}
 
 
@@ -179,7 +207,7 @@ def register_lister(payload: RegisterListerRequest) -> Dict[str, Any]:
     if not success or user is None:
         raise HTTPException(status_code=400, detail=message)
 
-    token = ctx.auth_manager.session_manager.create_session(user, remember_me=False)
+    token = _token_from_user(int(user["id"]))
     return {
         "message": message,
         "token": token,
@@ -202,6 +230,18 @@ def login(payload: LoginRequest) -> Dict[str, Any]:
     role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
     token = _token_from_user(int(user["id"]))
     return {"message": message, "token": token, "user": user, "role": role}
+
+
+@app.post("/auth/logout")
+def logout(
+    creds: HTTPAuthorizationCredentials = Depends(security),
+    user: dict = Depends(get_current_user),
+) -> Dict[str, str]:
+    if creds is None or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Missing token")
+    _revoke_token(creds.credentials)
+    ctx.auth_manager.session_manager.end_session(int(user["id"]))
+    return {"message": "Logged out"}
 
 
 @app.get("/auth/me")
@@ -292,3 +332,27 @@ def get_master_listings(
         "count": len(listings),
         "listings": _serialize_items(listings),
     }
+
+
+@app.post("/admin/areas/track")
+def track_area(
+    location: str,
+    frequency_hours: int = 24,
+    user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
+    if role not in {"admin", "lister"}:
+        raise HTTPException(status_code=403, detail="Insufficient role for area tracking")
+    ok = ctx.master_db.track_area(location, frequency_hours=frequency_hours)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Failed to track area")
+    return {"message": "Area tracking updated", "location": location, "frequency_hours": frequency_hours}
+
+
+@app.post("/admin/areas/refresh-now")
+def refresh_now(user: dict = Depends(get_current_user)) -> Dict[str, int]:
+    role = ctx.role_auth.get_user_role(int(user["id"])) or "searcher"
+    if role not in {"admin", "lister"}:
+        raise HTTPException(status_code=403, detail="Insufficient role for refresh")
+    updated = ctx.scheduler.run_once()
+    return {"updated_records": updated}

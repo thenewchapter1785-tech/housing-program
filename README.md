@@ -93,6 +93,24 @@ Security controls in web mode:
 - Government-email requirement for lister account registration
 - CORS allowlist via `WEB_ALLOWED_ORIGINS`
 
+## Ordered implementation status
+
+1. Automatic area-refresh scheduler:
+- Background refresh loop reads due areas from `area_tracking`
+- Refreshes provider data and syncs into `master_listings`
+- Web runtime controls via env: `AUTO_REFRESH_ENABLED`, `AUTO_REFRESH_INTERVAL_SECONDS`
+
+2. Secure web deployment enhancements:
+- Persistent auth token sessions in MySQL (`auth_sessions` table)
+- HTTPS reverse proxy config via Nginx at `deploy/nginx/default.conf`
+- Docker Compose includes `nginx` service for TLS termination
+
+3. Native desktop GUI layer:
+- Tkinter desktop app at `src/ui/desktop_gui.py`
+- Role-aware tabs for auth, search, lister actions, and master DB views
+- Desktop entrypoint now launches GUI by default (`src/desktop/main.py`)
+- CLI fallback remains available with `DESKTOP_USE_CLI=true`
+
 ## Data model behavior
 
 - Every search is saved for the current user in personal search tables
