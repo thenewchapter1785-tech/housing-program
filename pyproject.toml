@@ -1,0 +1,11 @@
+[project]
+name = "housing-aggregator"
+version = "0.1.0"
+description = "A modular housing listing aggregator for public housing search sources"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.32.3",
+  "beautifulsoup4>=4.12.3",
+  "lxml>=5.2.2",
+  "python-dotenv>=1.0.1"
+]
