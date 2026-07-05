@@ -1,7 +1,7 @@
 import argparse
 from housing_scraper.collector import Collector
-from housing_scraper.menu import run_menu
 from housing_scraper.app_launcher import AppLauncher
+from housing_scraper.menu import run_menu
 from ui.app_shell import AppShell
 
 
@@ -23,7 +23,10 @@ def main() -> None:
         "--ui-shell", action="store_true", help="Initialize the future Windows UI shell"
     )
     parser.add_argument(
-        "--app", action="store_true", default=True, help="Launch the main application (default)"
+        "--platform",
+        choices=["desktop", "web", "cli"],
+        default="desktop",
+        help="Runtime target: desktop app flow, secure web API, or collector CLI",
     )
     args = parser.parse_args()
 
@@ -36,9 +39,15 @@ def main() -> None:
         run_menu()
         return
 
-    if args.app:
+    if args.platform == "desktop":
         launcher = AppLauncher()
         launcher.run()
+        return
+
+    if args.platform == "web":
+        from web.main import main as run_web
+
+        run_web()
         return
 
     collector = Collector()

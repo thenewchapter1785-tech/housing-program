@@ -8,5 +8,5 @@ if not exist "%PYTHON_EXE%" (
     exit /b 1
 )
 "%PYTHON_EXE%" -m pip install -r requirements.txt >nul 2>&1
-"%PYTHON_EXE%" src\main.py --menu
+"%PYTHON_EXE%" src\main.py --platform desktop
 pause

@@ -61,8 +61,8 @@ class GovernmentEmailValidator:
             with storage.connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    INSERT INTO government_whitelist (email, gov_type, verified_by)
-                    VALUES (%s, %s, 'system')
+                    INSERT INTO government_whitelist (email, gov_type)
+                    VALUES (%s, %s)
                     ON DUPLICATE KEY UPDATE verified_at = CURRENT_TIMESTAMP
                     """,
                     (email, gov_type),

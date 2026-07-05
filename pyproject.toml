@@ -8,7 +8,11 @@ dependencies = [
   "beautifulsoup4>=4.12.3",
   "lxml>=5.2.2",
   "python-dotenv>=1.0.1",
-  "PyMySQL>=1.1.1"
+  "PyMySQL>=1.1.1",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "pydantic[email]>=2.8.2",
+  "pyinstaller>=6.10.0"
 ]
 
 [tool.black]
